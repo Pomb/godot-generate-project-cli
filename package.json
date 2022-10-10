@@ -1,0 +1,19 @@
+{
+  "name": "create-project",
+  "version": "1.0.0",
+  "description": "node cli application to facilitate generating godot settings for pixel art style games",
+  "scripts": {},
+  "keywords": [
+    "godot",
+    "scaffolding",
+    "pixel-art"
+  ],
+  "author": "Paul Lombard",
+  "license": "ISC",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "jimp": "^0.16.2",
+    "path": "^0.12.7",
+    "yargs": "^17.6.0"
+  }
+}

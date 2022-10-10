@@ -1,0 +1,348 @@
+#!/usr/bin/env node
+
+const Jimp = require("jimp");
+const fs = require("fs");
+const path = require("path");
+const argv = require("yargs/yargs")(process.argv.slice(2))
+  .usage(
+    "Generates a project folder with godot settings in the path provided.\nUsage: node $0 --project-name [string] --cell-size [num]"
+  )
+  .alias("n", "project-name")
+  .nargs("n", 1)
+  .describe("n", "project-name")
+  .demandOption(["n"])
+  .alias("p", "project-path")
+  .nargs("p", 1)
+  .describe("p", "parent project folder")
+  .default("p", process.cwd())
+  .alias("c", "cell-size")
+  .default("c", 8)
+  .nargs("c", 1)
+  .describe("c", "sets cell size settings in pixels")
+  .alias("r", "resolution")
+  .nargs("r", 2)
+  .describe("r", "the render resolution")
+  .default("r", [256, 144])
+  .alias("u", "upscaled-resolution")
+  .nargs("u", 2)
+  .describe("u", "the upscaled resolution")
+  .default("u", [1280, 720])
+  .help("h")
+  .alias("h", "help")
+  .example("node $0 -p my-project -c 8").argv;
+
+const cell_size = argv["cell-size"];
+const project_name = argv["project-name"];
+const project_path = argv["project-path"];
+const width = argv["resolution"][0];
+const height = argv["resolution"][1];
+const test_width = argv["upscaled-resolution"][0];
+const test_height = argv["upscaled-resolution"][1];
+
+const project_folder = () => `${project_path}/${project_name}`;
+
+function ensureDirectoryExistence(folder) {
+  fs.mkdirSync(folder, { recursive: true });
+}
+
+const generate_fonts = async () => {
+  return new Promise((resolve, reject) => {
+    ensureDirectoryExistence([project_folder(), "font"].join("/"));
+    let font_name = "m3x6.ttf";
+    let target_path = [project_folder(), "font", font_name].join("/");
+    let cur_folder = path.dirname(process.argv[1]);
+    let from_path = [cur_folder, "font", font_name].join("/");
+
+    // Font file
+    fs.copyFile(from_path, target_path, function (err) {
+      if (err) throw err;
+      console.log("Font file added");
+    });
+
+    // Font resource
+    let font_resouce_path = [project_folder(), "font", "m3x6.tres"].join("/");
+    fs.writeFile(
+      font_resouce_path,
+      `
+[gd_resource type="DynamicFont" load_steps=2 format=2]
+
+[ext_resource path="res://font/m3x6.ttf" type="DynamicFontData" id=1]
+
+[resource]
+extra_spacing_top = -5
+font_data = ExtResource( 1 )
+
+
+`,
+      function (err) {
+        if (err) reject(err);
+        console.log("Font resource created successfully.");
+        resolve();
+      }
+    );
+  });
+};
+
+function distanceFromCenter(rad, x, y) {
+  return Math.hypot(rad - x, rad - y);
+}
+
+function generate_texture() {
+  const white = 0xffffffff; //[255, 255, 255, 255];
+  const black = 0xff000000; //[0, 0, 0, 255];
+
+  // Pixel
+  let pixel_path = [project_folder(), "textures", "white_pixel.png"].join("/");
+
+  ensureDirectoryExistence([project_folder(), "textures"].join("/"));
+
+  new Jimp(1, 1, function (err, image) {
+    if (err) throw err;
+    image.setPixelColor(white, 0, 0);
+    image.write(pixel_path, (err) => {
+      if (err) throw err;
+      console.log("Pixel texture file created successfully.");
+    });
+  });
+
+  // Rectangle
+  let white_text_path = [
+    project_folder(),
+    "textures",
+    "white_rectangle.png",
+  ].join("/");
+
+  new Jimp(cell_size, cell_size, function (err, image) {
+    if (err) throw err;
+    for (let x = 0; x < cell_size; x++) {
+      for (let y = 0; y < cell_size; y++) {
+        image.setPixelColor(white, x, y);
+      }
+    }
+    image.write(white_text_path, (err) => {
+      if (err) throw err;
+      console.log("Rectangle texture file created successfully.");
+    });
+  });
+
+  let white_rectanle_outline_text_path = [
+    project_folder(),
+    "textures",
+    "white_rectangle_outline.png",
+  ].join("/");
+
+  new Jimp(cell_size, cell_size, function (err, image) {
+    if (err) throw err;
+    for (let x = 0; x < cell_size; x++) {
+      for (let y = 0; y < cell_size; y++) {
+        let color =
+          x == 0 || x == cell_size - 1 || y == 0 || y == cell_size - 1
+            ? white
+            : black;
+        image.setPixelColor(color, x, y);
+      }
+    }
+    image.write(white_rectanle_outline_text_path, (err) => {
+      if (err) throw err;
+      console.log("Rectangle outline texture file created successfully.");
+    });
+  });
+
+  let steps = Math.floor(cell_size * 3);
+  let radius = (cell_size - 1) / 2;
+
+  // circle
+  let white_circle_text_path = [
+    project_folder(),
+    "textures",
+    "white_circle.png",
+  ].join("/");
+
+  new Jimp(cell_size, cell_size, function (err, image) {
+    if (err) throw err;
+
+    for (let x = 0; x < cell_size; x++) {
+      for (let y = 0; y < cell_size; y++) {
+        let color =
+          distanceFromCenter(cell_size - 1, x + radius, y + radius) > radius
+            ? black
+            : white;
+        image.setPixelColor(color, x, y);
+      }
+      for (let i = 0; i < steps; i++) {
+        let x = radius * Math.cos((2 * Math.PI * i) / steps);
+        let y = radius * Math.sin((2 * Math.PI * i) / steps);
+        image.setPixelColor(white, radius + x, radius + y);
+      }
+    }
+
+    image.write(white_circle_text_path, (err) => {
+      if (err) throw err;
+      console.log("Circle texture file created successfully.");
+    });
+  });
+
+  // Circle outline
+  let white_circle_outline_text_path = [
+    project_folder(),
+    "textures",
+    "white_circle_outline.png",
+  ].join("/");
+
+  new Jimp(cell_size, cell_size, function (err, image) {
+    if (err) throw err;
+
+    for (let i = 0; i < steps; i++) {
+      let x = radius * Math.cos((2 * Math.PI * i) / steps);
+      let y = radius * Math.sin((2 * Math.PI * i) / steps);
+      let col = white;
+      image.setPixelColor(col, radius + x, radius + y);
+    }
+
+    image.write(white_circle_outline_text_path, (err) => {
+      if (err) throw err;
+      console.log("Circle outline texture file created successfully.");
+    });
+  });
+}
+
+function generate_main_scene() {
+  let main_file_path = [project_folder(), "core", "main.gd"].join("/");
+  ensureDirectoryExistence([project_folder(), "core"].join("/"));
+  fs.writeFile(
+    main_file_path,
+    `
+extends Node2D
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_tree().reload_current_scene()
+
+`,
+    function (err) {
+      if (err) throw err;
+      console.log("Main scene file created successfully.");
+    }
+  );
+
+  let main_scene_file_path = [project_folder(), "core", "Main.tscn"].join("/");
+  fs.writeFile(
+    main_scene_file_path,
+    `
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://core/main.gd" type="Script" id=1]
+
+[node name="Main" type="Node2D"]
+script = ExtResource( 1 )
+
+`,
+    function (err) {
+      if (err) throw err;
+      console.log("Main scene resource created successfully.");
+    }
+  );
+}
+
+const generate_project_file = async () => {
+  return new Promise((resolve, reject) => {
+    const project_file = [project_folder(), "project.godot"].join("/");
+
+    fs.writeFile(
+      project_file,
+      `
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=4
+
+[application]
+
+config/name="${project_name}"
+run/main_scene="res://core/Main.tscn"
+
+[display]
+
+window/size/width=${width}
+window/size/height=${height}
+window/size/test_width=${test_width}
+window/size/test_height=${test_height}
+window/stretch/mode="2d"
+window/stretch/aspect="keep"
+
+[gui]
+
+theme/custom_font="res://font/m3x6.tres"
+
+
+[importer_defaults]
+
+texture={
+"compress/bptc_ldr": 0,
+"compress/hdr_mode": 0,
+"compress/lossy_quality": 0.7,
+"compress/mode": 0,
+"compress/normal_map": 0,
+"detect_3d": false,
+"flags/anisotropic": false,
+"flags/filter": false,
+"flags/mipmaps": false,
+"flags/repeat": 0,
+"flags/srgb": 2,
+"process/HDR_as_SRGB": false,
+"process/fix_alpha_border": true,
+"process/invert_color": false,
+"process/normal_map_invert_y": false,
+"process/premult_alpha": false,
+"size_limit": 0,
+"stream": false,
+"svg/scale": 1.0
+}
+
+[physics]
+
+2d/cell_size=${cell_size}
+
+[rendering]
+
+2d/snapping/use_gpu_pixel_snap=true
+
+[world]
+
+2d/cell_size=${cell_size}
+
+`,
+      function (err) {
+        if (err) reject(err);
+        console.log("Project file created successfully.");
+        resolve();
+      }
+    );
+  });
+};
+
+const run = async () => {
+  console.log(`generating ${project_name}...`);
+  let folder = project_folder();
+  Promise.all([
+    ensureDirectoryExistence(folder),
+    generate_fonts(),
+    generate_texture(),
+    generate_main_scene(),
+    generate_project_file(),
+  ])
+    .then((_) => {
+      console.log("Completed!");
+    })
+    .catch((e) => {
+      console.log("[ERROR] ", e);
+    });
+};
+
+run();

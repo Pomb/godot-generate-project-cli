@@ -1,35 +1,36 @@
 #!/usr/bin/env node
 
+const { log, Level } = require("./logger")
 const Jimp = require("jimp");
 const fs = require("fs");
 const path = require("path");
 const argv = require("yargs/yargs")(process.argv.slice(2))
-  .usage(
-    "Generates a project folder with godot settings in the path provided.\nUsage: node $0 --project-name [string] --cell-size [num]"
-  )
-  .alias("n", "project-name")
-  .nargs("n", 1)
-  .describe("n", "project-name")
-  .demandOption(["n"])
-  .alias("p", "project-path")
-  .nargs("p", 1)
-  .describe("p", "parent project folder")
-  .default("p", process.cwd())
-  .alias("c", "cell-size")
-  .default("c", 8)
-  .nargs("c", 1)
-  .describe("c", "sets cell size settings in pixels")
-  .alias("r", "resolution")
-  .nargs("r", 2)
-  .describe("r", "the render resolution")
-  .default("r", [256, 144])
-  .alias("u", "upscaled-resolution")
-  .nargs("u", 2)
-  .describe("u", "the upscaled resolution")
-  .default("u", [1280, 720])
-  .help("h")
-  .alias("h", "help")
-  .example("node $0 -p my-project -c 8").argv;
+	.usage(
+		"Generates a project folder with godot settings in the path provided.\nUsage: node $0 --project-name [string] --cell-size [num]"
+	)
+	.alias("n", "project-name")
+	.nargs("n", 1)
+	.describe("n", "project-name")
+	.demandOption(["n"])
+	.alias("p", "project-path")
+	.nargs("p", 1)
+	.describe("p", "parent project folder")
+	.default("p", process.cwd())
+	.alias("c", "cell-size")
+	.default("c", 8)
+	.nargs("c", 1)
+	.describe("c", "sets cell size settings in pixels")
+	.alias("r", "resolution")
+	.nargs("r", 2)
+	.describe("r", "the render resolution")
+	.default("r", [256, 144])
+	.alias("u", "upscaled-resolution")
+	.nargs("u", 2)
+	.describe("u", "the upscaled resolution")
+	.default("u", [1280, 720])
+	.help("h")
+	.alias("h", "help")
+	.example("node $0 -p my-project -c 8").argv;
 
 const cell_size = argv["cell-size"];
 const project_name = argv["project-name"];
@@ -42,176 +43,487 @@ const test_height = argv["upscaled-resolution"][1];
 const project_folder = () => `${project_path}/${project_name}`;
 
 function ensureDirectoryExistence(folder) {
-  fs.mkdirSync(folder, { recursive: true });
+	fs.mkdirSync(folder, { recursive: true });
 }
 
 const generate_fonts = async () => {
-  return new Promise((resolve, reject) => {
-    ensureDirectoryExistence([project_folder(), "font"].join("/"));
-    let font_name = "m3x6.ttf";
-    let target_path = [project_folder(), "font", font_name].join("/");
-    let cur_folder = path.dirname(process.argv[1]);
-    let from_path = [cur_folder, "font", font_name].join("/");
+	return new Promise((resolve, reject) => {
+		let font_name = "Bitty.ttf";
+		let target_path = [project_folder(), "font", font_name].join("/");
+		let cur_folder = path.dirname(process.argv[1]);
+		let from_path = [cur_folder, "font", font_name].join("/");
 
-    // Font file
-    fs.copyFile(from_path, target_path, function (err) {
-      if (err) throw err;
-      console.log("Font file added");
-    });
+		// Font file
+		fs.copyFile(from_path, target_path, function (err) {
+			if (err) throw err;
+			log("[Success] Font file added");
+		});
 
-    // Font resource
-    let font_resouce_path = [project_folder(), "font", "m3x6.tres"].join("/");
-    fs.writeFile(
-      font_resouce_path,
-      `
+		// Font resource
+		let font_resouce_path = [project_folder(), "font", "Bitty.tres"].join("/");
+		fs.writeFile(
+			font_resouce_path,
+			`
 [gd_resource type="DynamicFont" load_steps=2 format=2]
 
-[ext_resource path="res://font/m3x6.ttf" type="DynamicFontData" id=1]
+[ext_resource path="res://font/Bitty.ttf" type="DynamicFontData" id=1]
 
 [resource]
-extra_spacing_top = -5
+size = 16
+extra_spacing_top = -4
+extra_spacing_bottom = -4
+extra_spacing_char = 0
+extra_spacing_space = 0
 font_data = ExtResource( 1 )
 
-
 `,
-      function (err) {
-        if (err) reject(err);
-        console.log("Font resource created successfully.");
-        resolve();
-      }
-    );
-  });
+			function (err) {
+				if (err) reject(err);
+				log("[Success] Font resource created");
+				resolve();
+			}
+		);
+	});
 };
 
+
+const generate_scene_control = async () => {
+	return new Promise((resolve, reject) => {
+		let file_path = [project_folder(), "core", "scene_controller.gd"].join("/");
+			fs.writeFile(
+				file_path,
+				`
+extends Node
+
+onready var transition_tscn = preload("res://core/TransitionController.tscn")
+var transition_controller
+var scene_container
+var _busy = false
+
+
+func is_transitioning():
+	return _busy
+
+
+func current_scene():
+	if scene_container == null:
+		scene_container = get_tree().root.get_node("Main/Scene")
+
+	if scene_container.get_child_count() > 0:
+		return scene_container.get_child(0).name
+
+	return null
+
+
+func _ready() -> void:
+	scene_container = get_tree().root.get_node("Main/Scene")
+
+	transition_controller = transition_tscn.instance()
+	add_child(transition_controller)
+
+
+func transition(scene_name: String, type: String):
+	if _busy:
+		push_error("cannot change scenes while already transitioning")
+		return
+
+	_busy = true
+	var target = "res://scene/%s.tscn" % scene_name
+	var target_tscn = load(target)
+
+	yield(transition_controller.transition_in(type), "completed")
+	for scene in scene_container.get_children():
+		scene.queue_free()
+
+	var new_scene = target_tscn.instance()
+	scene_container.add_child(new_scene)
+	yield(get_tree(), "idle_frame")
+	yield(transition_controller.transition_out(type), "completed")
+	_busy = false
+
+		`,
+				function (err) {
+					if (err) reject(err);
+					log("[Success] Scene controller scene created");
+				}
+			);
+		
+		 file_path = [project_folder(), "core", "TransitionController.tscn"].join("/");
+			fs.writeFile(
+				file_path,
+				`
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://core/transition_controller.gd" type="Script" id=1]
+
+[node name="Fade" type="CanvasLayer"]
+layer = 10
+script = ExtResource( 1 )
+
+[node name="ColorRect" type="ColorRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color( 0, 0, 0, 1 )
+
+[node name="Tween" type="Tween" parent="."]
+
+		`,
+				function (err) {
+					if (err) reject(err);
+					log("[Success] Transition controller scene created");
+				}
+			);
+		
+		file_path = [project_folder(), "core", "transition_controller.gd"].join("/");
+			fs.writeFile(
+				file_path,
+				`
+extends CanvasLayer
+
+onready var color_rect = $ColorRect
+onready var tween = $Tween
+var screen_size
+var transition_in_time = 0.2
+var transition_out_time = 0.3
+
+
+func _ready() -> void:
+	screen_size = get_viewport().get_visible_rect().size
+
+
+func transition_in(type = "FADE"):
+	visible = true
+	var ref
+	match type:
+		"FADE":
+			ref = funcref(self, "_fade_in")
+		"WIPE":
+			ref = funcref(self, "_wipe_in")
+		_:
+			push_error("unknown type")
+	yield(ref.call_func(), "completed")
+	return true
+
+
+func transition_out(type = "FADE"):
+	visible = true
+	var ref
+	match type:
+		"FADE":
+			ref = funcref(self, "_fade_out")
+		"WIPE":
+			ref = funcref(self, "_wipe_out")
+		_:
+			push_error("unknown type")
+
+	yield(ref.call_func(), "completed")
+	visible = false
+	return true
+
+
+func _wipe_in():
+	color_rect.margin_bottom = 10.0
+	color_rect.margin_top = screen_size.y + 10.0
+	color_rect.modulate = Color.black
+	tween.interpolate_property(
+		color_rect, "margin_top", color_rect.margin_top, 0.0, transition_in_time
+	)
+	tween.start()
+	yield(tween, "tween_all_completed")
+
+
+func _wipe_out():
+	color_rect.margin_top = -10.0
+	color_rect.margin_bottom = 10.0
+	color_rect.modulate = Color.black
+	tween.interpolate_property(
+		color_rect, "margin_bottom", color_rect.margin_bottom, -screen_size.y, transition_out_time
+	)
+	tween.start()
+	yield(tween, "tween_all_completed")
+
+
+func _fade_in():
+	color_rect.margin_top = 0.0
+	color_rect.margin_bottom = 0.0
+	tween.interpolate_property(
+		color_rect, "modulate", color_rect.modulate, Color.black, transition_in_time
+	)
+	tween.start()
+	yield(tween, "tween_all_completed")
+
+
+func _fade_out():
+	color_rect.margin_top = 0.0
+	color_rect.margin_bottom = 0.0
+	tween.interpolate_property(
+		color_rect, "modulate", color_rect.modulate, Color.transparent, transition_out_time
+	)
+	tween.start()
+	yield(tween, "tween_all_completed")
+	return true
+
+		`,
+				function (err) {
+					if (err) reject(err);
+					log("[Success] Transition controller created");
+					resolve()
+				}
+			);
+	});
+}
+
+const generate_audio = async () => {
+	return new Promise((resolve, reject) => {
+		let cur_folder = path.dirname(process.argv[1]);
+		let place_holder_name = "placeholder_01.wav";
+		let from_path = [cur_folder, "audio", place_holder_name].join("/");
+		let target_path = [project_folder(), "audio", place_holder_name].join("/");
+
+		// Placeholder audio file
+		fs.copyFile(from_path, target_path, function (err) {
+			if (err) reject(err);
+			log("[Success] Audio file added");
+		});
+	// Audio controller
+	let audio_controller_file_path = [project_folder(), "core", "audio_controller.gd"].join('/')
+
+		fs.writeFile(
+			audio_controller_file_path,
+			`
+extends Node
+
+var SFX_BUS = "SFX"
+var MUSIC_BUS = "MUISC"
+
+onready var placeholder = preload("res://audio/placeholder_01.wav")
+var streams = []
+
+
+func _ready() -> void:
+	_add_streams(10, SFX_BUS)
+	_add_streams(2, MUSIC_BUS)
+
+
+func _add_streams(count, bus):
+	for _i in range(count):
+		var asp = AudioStreamPlayer.new()
+		asp.bus = bus
+		add_child(asp)
+		streams.append(asp)
+
+
+func play_music(clip):
+	if clip == null:
+		push_error("requires music clip")
+		return
+
+	_play(clip, MUSIC_BUS, false)
+
+
+func play_sfx(clip = null):
+	if clip == null:
+		clip = placeholder
+	_play(clip, SFX_BUS)
+
+
+func _play(clip, bus, randomize_pitch = true):
+	var asp = get_free(bus)
+	if asp == null:
+		push_warning("no more available stream players")
+		return
+
+	asp.stream = clip
+	if randomize_pitch:
+		asp.pitch_scale = rand_range(0.9, 1.1)
+
+	asp.play()
+
+
+func get_free(bus = SFX_BUS):
+	var result
+	for asp in streams:
+		if asp.bus == bus:
+			if not asp.is_playing():
+				result = asp
+				break
+
+	return result
+
+`,
+			function (err) {
+				if (err) reject(err);
+				log("[Success] Audio controller file created");
+				resolve()
+			}
+		);
+
+
+	// audio bus config
+	var audio_bus_path = [project_folder(), "default_bus_layout.tres"].join('/')
+	fs.writeFile(audio_bus_path, `
+[gd_resource type="AudioBusLayout" load_steps=2 format=2]
+
+[sub_resource type="AudioEffectReverb" id=1]
+resource_name = "Reverb"
+predelay_msec = 100.0
+room_size = 0.2
+wet = 0.1
+
+[resource]
+bus/1/name = "SFX"
+bus/1/solo = false
+bus/1/mute = false
+bus/1/bypass_fx = false
+bus/1/volume_db = 0.0
+bus/1/send = "Master"
+bus/1/effect/0/effect = SubResource( 1 )
+bus/1/effect/0/enabled = true
+bus/2/name = "MUSIC"
+bus/2/solo = false
+bus/2/mute = false
+bus/2/bypass_fx = false
+bus/2/volume_db = 0.0
+bus/2/send = "Master"
+
+
+`, function (err) {
+				if (err) reject(err);
+				log("[Success] Default audio bus layout created");
+				resolve()
+			}
+		);
+	});
+}
+
+
 function distanceFromCenter(rad, x, y) {
-  return Math.hypot(rad - x, rad - y);
+	return Math.hypot(rad - x, rad - y);
 }
 
 function generate_texture() {
-  const white = 0xffffffff; //[255, 255, 255, 255];
-  const black = 0xff000000; //[0, 0, 0, 255];
+	const white = 0xffffffff; //[255, 255, 255, 255];
+	const black = 0xff000000; //[0, 0, 0, 255];
 
-  // Pixel
-  let pixel_path = [project_folder(), "textures", "white_pixel.png"].join("/");
+	// Pixel
+	let pixel_path = [project_folder(), "textures", "white_pixel.png"].join("/");
 
-  ensureDirectoryExistence([project_folder(), "textures"].join("/"));
+	new Jimp(1, 1, function (err, image) {
+		if (err) throw err;
+		image.setPixelColor(white, 0, 0);
+		image.write(pixel_path, (err) => {
+			if (err) throw err;
+			log("[Success] Pixel texture file created");
+		});
+	});
 
-  new Jimp(1, 1, function (err, image) {
-    if (err) throw err;
-    image.setPixelColor(white, 0, 0);
-    image.write(pixel_path, (err) => {
-      if (err) throw err;
-      console.log("Pixel texture file created successfully.");
-    });
-  });
+	// Rectangle
+	let white_text_path = [
+		project_folder(),
+		"textures",
+		"white_rectangle.png",
+	].join("/");
 
-  // Rectangle
-  let white_text_path = [
-    project_folder(),
-    "textures",
-    "white_rectangle.png",
-  ].join("/");
+	new Jimp(cell_size, cell_size, function (err, image) {
+		if (err) throw err;
+		for (let x = 0; x < cell_size; x++) {
+			for (let y = 0; y < cell_size; y++) {
+				image.setPixelColor(white, x, y);
+			}
+		}
+		image.write(white_text_path, (err) => {
+			if (err) throw err;
+			log("[Success] Rectangle texture file created");
+		});
+	});
 
-  new Jimp(cell_size, cell_size, function (err, image) {
-    if (err) throw err;
-    for (let x = 0; x < cell_size; x++) {
-      for (let y = 0; y < cell_size; y++) {
-        image.setPixelColor(white, x, y);
-      }
-    }
-    image.write(white_text_path, (err) => {
-      if (err) throw err;
-      console.log("Rectangle texture file created successfully.");
-    });
-  });
+	let white_rectanle_outline_text_path = [
+		project_folder(),
+		"textures",
+		"white_rectangle_outline.png",
+	].join("/");
 
-  let white_rectanle_outline_text_path = [
-    project_folder(),
-    "textures",
-    "white_rectangle_outline.png",
-  ].join("/");
+	new Jimp(cell_size, cell_size, function (err, image) {
+		if (err) throw err;
+		for (let x = 0; x < cell_size; x++) {
+			for (let y = 0; y < cell_size; y++) {
+				let color =
+					x == 0 || x == cell_size - 1 || y == 0 || y == cell_size - 1
+						? white
+						: black;
+				image.setPixelColor(color, x, y);
+			}
+		}
+		image.write(white_rectanle_outline_text_path, (err) => {
+			if (err) throw err;
+			log("[Success] Rectangle outline texture file created");
+		});
+	});
 
-  new Jimp(cell_size, cell_size, function (err, image) {
-    if (err) throw err;
-    for (let x = 0; x < cell_size; x++) {
-      for (let y = 0; y < cell_size; y++) {
-        let color =
-          x == 0 || x == cell_size - 1 || y == 0 || y == cell_size - 1
-            ? white
-            : black;
-        image.setPixelColor(color, x, y);
-      }
-    }
-    image.write(white_rectanle_outline_text_path, (err) => {
-      if (err) throw err;
-      console.log("Rectangle outline texture file created successfully.");
-    });
-  });
+	let steps = Math.floor(cell_size * 3);
+	let radius = (cell_size - 1) / 2;
 
-  let steps = Math.floor(cell_size * 3);
-  let radius = (cell_size - 1) / 2;
+	// circle
+	let white_circle_text_path = [
+		project_folder(),
+		"textures",
+		"white_circle.png",
+	].join("/");
 
-  // circle
-  let white_circle_text_path = [
-    project_folder(),
-    "textures",
-    "white_circle.png",
-  ].join("/");
+	new Jimp(cell_size, cell_size, function (err, image) {
+		if (err) throw err;
 
-  new Jimp(cell_size, cell_size, function (err, image) {
-    if (err) throw err;
+		for (let x = 0; x < cell_size; x++) {
+			for (let y = 0; y < cell_size; y++) {
+				let color =
+					distanceFromCenter(cell_size - 1, x + radius, y + radius) > radius
+						? black
+						: white;
+				image.setPixelColor(color, x, y);
+			}
+			for (let i = 0; i < steps; i++) {
+				let x = radius * Math.cos((2 * Math.PI * i) / steps);
+				let y = radius * Math.sin((2 * Math.PI * i) / steps);
+				image.setPixelColor(white, radius + x, radius + y);
+			}
+		}
 
-    for (let x = 0; x < cell_size; x++) {
-      for (let y = 0; y < cell_size; y++) {
-        let color =
-          distanceFromCenter(cell_size - 1, x + radius, y + radius) > radius
-            ? black
-            : white;
-        image.setPixelColor(color, x, y);
-      }
-      for (let i = 0; i < steps; i++) {
-        let x = radius * Math.cos((2 * Math.PI * i) / steps);
-        let y = radius * Math.sin((2 * Math.PI * i) / steps);
-        image.setPixelColor(white, radius + x, radius + y);
-      }
-    }
+		image.write(white_circle_text_path, (err) => {
+			if (err) throw err;
+			log("[Success] Circle texture file created");
+		});
+	});
 
-    image.write(white_circle_text_path, (err) => {
-      if (err) throw err;
-      console.log("Circle texture file created successfully.");
-    });
-  });
+	// Circle outline
+	let white_circle_outline_text_path = [
+		project_folder(),
+		"textures",
+		"white_circle_outline.png",
+	].join("/");
 
-  // Circle outline
-  let white_circle_outline_text_path = [
-    project_folder(),
-    "textures",
-    "white_circle_outline.png",
-  ].join("/");
+	new Jimp(cell_size, cell_size, function (err, image) {
+		if (err) throw err;
 
-  new Jimp(cell_size, cell_size, function (err, image) {
-    if (err) throw err;
+		for (let i = 0; i < steps; i++) {
+			let x = radius * Math.cos((2 * Math.PI * i) / steps);
+			let y = radius * Math.sin((2 * Math.PI * i) / steps);
+			let col = white;
+			image.setPixelColor(col, radius + x, radius + y);
+		}
 
-    for (let i = 0; i < steps; i++) {
-      let x = radius * Math.cos((2 * Math.PI * i) / steps);
-      let y = radius * Math.sin((2 * Math.PI * i) / steps);
-      let col = white;
-      image.setPixelColor(col, radius + x, radius + y);
-    }
-
-    image.write(white_circle_outline_text_path, (err) => {
-      if (err) throw err;
-      console.log("Circle outline texture file created successfully.");
-    });
-  });
+		image.write(white_circle_outline_text_path, (err) => {
+			if (err) throw err;
+			log("[Success] Circle outline texture file created");
+		});
+	});
 }
 
 function generate_main_scene() {
-  let main_file_path = [project_folder(), "core", "main.gd"].join("/");
-  ensureDirectoryExistence([project_folder(), "core"].join("/"));
-  fs.writeFile(
-    main_file_path,
-    `
+	let main_file_path = [project_folder(), "core", "main.gd"].join("/");
+	ensureDirectoryExistence([project_folder(), "core"].join("/"));
+	fs.writeFile(
+		main_file_path,
+		`
 extends Node2D
 
 
@@ -219,17 +531,35 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		get_tree().reload_current_scene()
 
-`,
-    function (err) {
-      if (err) throw err;
-      console.log("Main scene file created successfully.");
-    }
-  );
+	if event.is_action_released("ui_accept"):
+		_toggle_scene()
 
-  let main_scene_file_path = [project_folder(), "core", "Main.tscn"].join("/");
-  fs.writeFile(
-    main_scene_file_path,
-    `
+
+func _toggle_scene():
+	AudioController.play_sfx()
+	var current = SceneController.current_scene()
+	var target_scene
+	match current:
+		"Primary":
+			target_scene = "Secondary"
+		_:
+			target_scene = "Primary"
+
+	var rnd_types = ["FADE", "WIPE"]
+	var type = rnd_types[rand_range(0, 2)]
+	SceneController.transition(target_scene, type)
+
+`,
+		function (err) {
+			if (err) throw err;
+			log("[Success] Main scene file created");
+		}
+	);
+
+	let main_scene_file_path = [project_folder(), "core", "Main.tscn"].join("/");
+	fs.writeFile(
+		main_scene_file_path,
+		`
 [gd_scene load_steps=2 format=2]
 
 [ext_resource path="res://core/main.gd" type="Script" id=1]
@@ -237,21 +567,82 @@ func _unhandled_input(event: InputEvent) -> void:
 [node name="Main" type="Node2D"]
 script = ExtResource( 1 )
 
+[node name="Scene" type="Node" parent="."]
+
 `,
-    function (err) {
-      if (err) throw err;
-      console.log("Main scene resource created successfully.");
-    }
-  );
+		function (err) {
+			if (err) throw err;
+			log("[Success] Main scene resource created");
+		}
+	);
+}
+
+const generate_scenes = async () => {
+
+		let scenes = [
+			{
+			"name": "Primary",
+			"path": [project_folder(), "scene", "Primary.tscn"].join("/"),
+			"data": `
+[gd_scene format=2]
+
+[node name="Primary" type="Node2D"]
+
+[node name="Label" type="Label" parent="."]
+margin_right = 40.0
+margin_bottom = 8.0
+text = "PRIMARY"
+
+`
+			},
+			{
+			"name": "Secondary",
+			"path": [project_folder(), "scene", "Secondary.tscn"].join("/"),
+			"data": `
+[gd_scene format=2]
+
+[node name="Secondary" type="Node2D"]
+
+[node name="Label" type="Label" parent="."]
+margin_right = 40.0
+margin_bottom = 8.0
+text = "SECONDARY"
+
+`
+			},
+		]
+		
+		for (let index = 0; index < scenes.length; index++) {
+			const scene = scenes[index];
+			await writeFile(
+				scene.path,
+				scene.data,
+				() => log(`[Success] ${scene.name} scene resource created`)
+			);	
+		}
+}
+
+const writeFile = (path, data, callback) => {
+	return new Promise((resolve, reject) => {
+		fs.writeFile(
+				path,
+				data,
+				function (err) {
+					if (err) reject(err);
+					callback()
+					resolve()
+				}
+			);
+	});
 }
 
 const generate_project_file = async () => {
-  return new Promise((resolve, reject) => {
-    const project_file = [project_folder(), "project.godot"].join("/");
+	return new Promise((resolve, reject) => {
+		const project_file = [project_folder(), "project.godot"].join("/");
 
-    fs.writeFile(
-      project_file,
-      `
+		fs.writeFile(
+			project_file,
+			`
 ; Engine configuration file.
 ; It's best edited using the editor UI and not directly,
 ; since the parameters that go here are not all obvious.
@@ -267,6 +658,14 @@ config_version=4
 config/name="${project_name}"
 run/main_scene="res://core/Main.tscn"
 
+
+[autoload]
+
+AudioController="*res://core/audio_controller.gd"
+SceneController="*res://core/scene_controller.gd"
+
+
+
 [display]
 
 window/size/width=${width}
@@ -278,7 +677,7 @@ window/stretch/aspect="keep"
 
 [gui]
 
-theme/custom_font="res://font/m3x6.tres"
+theme/custom_font="res://font/Bitty.tres"
 
 
 [importer_defaults]
@@ -318,31 +717,47 @@ texture={
 2d/cell_size=${cell_size}
 
 `,
-      function (err) {
-        if (err) reject(err);
-        console.log("Project file created successfully.");
-        resolve();
-      }
-    );
-  });
+			function (err) {
+				if (err) reject(err);
+				log("[Success] Project file created");
+				resolve();
+			}
+		);
+	});
 };
 
 const run = async () => {
-  console.log(`generating ${project_name}...`);
-  let folder = project_folder();
-  Promise.all([
-    ensureDirectoryExistence(folder),
-    generate_fonts(),
-    generate_texture(),
-    generate_main_scene(),
-    generate_project_file(),
-  ])
-    .then((_) => {
-      console.log("Completed!");
-    })
-    .catch((e) => {
-      console.log("[ERROR] ", e);
-    });
+	try {
+		log(`Generating project ${project_name}...`, Level.positive);
+		let folder = project_folder();
+		log(`project location: ${folder}`);
+		// create the folders
+		await Promise.all([
+			ensureDirectoryExistence(folder),
+			ensureDirectoryExistence([folder, "core"].join("/")),
+			ensureDirectoryExistence([folder, "audio"].join("/")),
+			ensureDirectoryExistence([folder, "font"].join("/")),
+			ensureDirectoryExistence([folder, "textures"].join("/")),
+			ensureDirectoryExistence([folder, "scene"].join("/")),
+		]).then(async (_) =>  {
+			log("[Success] Folders created")
+
+			// generate the files
+			await Promise.all([
+				generate_scenes(),
+				generate_audio(),
+				generate_fonts(),
+				generate_texture(),
+				generate_main_scene(),
+				generate_project_file(),
+				generate_scene_control()
+			]).then((_) => {
+				log("Project generation complete!", Level.positive);
+			});
+		});
+	} catch (e) {
+		log("[ERROR] ", Level.error, e);
+	}
 };
 
 run();

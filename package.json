@@ -9,7 +9,7 @@
     "pixel-art"
   ],
   "author": "Paul Lombard",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "fs": "^0.0.1-security",
     "jimp": "^0.16.2",
